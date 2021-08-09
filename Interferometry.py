@@ -30,50 +30,38 @@ import winsound
 #The first few classes contain both the math and how the data was stored.
 
 #all filters use functions return V(f)*f
-def low_pass_filter(f, f_1, f_2): 
+def low_pass_filter(f, f_3, f_4): 
     filt = []
     for elem in f:
-        if elem<f_1:
+        if elem<=f_3:
             filt.append(elem)
-        elif elem>f_2:
+        elif elem>=f_4:
             filt.append(0.0)
         else:
-            e = np.pi/2/(f_2-f_1)*(elem-f_1)
+            e = np.pi/2*(elem-f_3)/(f_4-f_3)
             if e <= -np.pi/2 or e>=np.pi/2:
                 filt.append(0.0)
             else:
-                filt.append(e**2)       
+                filt.append(elem*np.math.cos(e)**2)       
     return np.array(filt)
 
 def high_pass_filter(f, f_1, f_2):
     filt = []
     for elem in f:
-        if elem<f_1:
+        if elem<=f_1:
             filt.append(0.0)
-        elif elem>f_2:
+        elif elem>=f_2:
             filt.append(elem)
         else:
-            e = np.pi/2/(f_2-f_1)*(elem-f_1)
+            e = np.pi/2*(elem-f_1)/(f_2-f_1)
             if e <= -np.pi/2 or e>=np.pi/2:
-                filt.append(0.0)
+                filt.append(elem)
             else:
-                filt.append(e**2)
+                filt.append(elem*np.math.sin(e)**2)  
     return np.array(filt)
 
-def band_pass_filter(f, f_1, f_2):
-    filt = []
-    for elem in f:
-        if elem<f_1:
-            filt.append(0.0)
-        elif elem>f_2:
-            filt.append(0.0)
-        else:
-            e = np.pi/2/(f_2-f_1)*(elem-f_1)
-            if e <= -np.pi/2 or e>=np.pi/2:
-                filt.append(0.0)
-            else:
-                filt.append(e**2)
-    return np.array(filt)
+def band_pass_filter(f, f_1, f_2, f_3, f_4):
+    return high_pass_filter(low_pass_filter(f, f_3, f_4), f_1, f_2)
 
 def normalized_cross_corelation(tau, s_m, s_ref): 
     if tau>= 0: #according to bracewell a negative tau is the same as interchanging them
@@ -204,9 +192,9 @@ class library_data():
         self.samp = 0
         self.libar = np.array([])            
         
-    def filter_lib(self, value, f_1, f_2):
+    def filter_lib(self, value, f_1, f_2, f_3, f_4):
         for i in range(self.length):
-            self.nodes[i+1].after_filter(value, f_1, f_2)
+            self.nodes[i+1].after_filter(value, f_1, f_2, f_3, f_4)
     
     def compare_to_library(self, measured_node):
         compare = np.zeros(self.length)
@@ -295,21 +283,21 @@ class data_node(object):
             i = 0
             j = min(stop, 5000)
         self.dar = ar[i:j]
-        self.s = self.dar
+        self.s = np.array(self.dar)
 
-    def after_filter(self, val, f_1, f_2):
-        if val == 1 or (f_1 == f_2 == 0):
-            self.s = self.dar
+    def after_filter(self, val, f_1, f_2, f_3, f_4):
+        if val == 1 or (f_1 == f_2 == f_3 == f_4 == 0):
+            self.s = np.array(self.dar)
         else:
-            ampspectrum=np.fft.rfft(self.dar)
+            ampspectrum=np.absolute(np.fft.rfft(self.dar))
             if val == 2:
-                fil_fft = ampspectrum*low_pass_filter(ampspectrum, f_1, f_2)
+                fil_fft = low_pass_filter(ampspectrum, f_3, f_4)
                 self.s = np.fft.irfft(fil_fft)
             elif val == 3:
-                fil_fft = ampspectrum*high_pass_filter(ampspectrum, f_1, f_2)
+                fil_fft = high_pass_filter(ampspectrum, f_1, f_2)
                 self.s = np.fft.irfft(fil_fft)
             elif val == 4:
-                fil_fft = ampspectrum*band_pass_filter(ampspectrum, f_1, f_2)
+                fil_fft = band_pass_filter(ampspectrum, f_1, f_2, f_3, f_4)
                 self.s = np.fft.irfft(fil_fft)  
     
     def change_name(self):
@@ -697,7 +685,7 @@ class library(object):
         self.table = Frame(self.display)
         self.table.pack(side = "left")
         if master.lib_dat.length > 0:
-            master.lib_dat.filter_lib(master.setvalues[0], master.setvalues[1], master.setvalues[2])
+            master.lib_dat.filter_lib(master.setvalues[0], master.setvalues[1], master.setvalues[2], master.setvalues[5], master.setvalues[6])
             self.create_table(self.table, master)
             winsound.Beep(10000, 100)
             winsound.Beep(2500, 200)
@@ -737,7 +725,7 @@ class library(object):
                         master.lib_dat.add_node(i)
                         a,b = self.modify( (master.lib_dat.nodes[master.lib_dat.length].dar), master)
                         master.lib_dat.nodes[master.lib_dat.length].modify(a,b)
-                        master.lib_dat.nodes[master.lib_dat.length].after_filter(master.setvalues[0], master.setvalues[1], master.setvalues[2])
+                        master.lib_dat.nodes[master.lib_dat.length].after_filter(master.setvalues[0], master.setvalues[1], master.setvalues[2], master.setvalues[5], master.setvalues[6])
                         if master.lib_dat.length == 1:
                             master.lib_dat.lib_array()
                         else:
@@ -818,20 +806,26 @@ class library(object):
         l = master.lib_dat.length
         f_1 = master.setvalues[1]
         f_2 = master.setvalues[2]
+        f_3 = master.setvalues[5]
+        f_4 = master.setvalues[6]
         
-        if f_1 == f_2 == 0:
+        if f_1 == f_2 == f_3 == f_4 == 0:
             f_1, f_2 = master.lib_dat.frequency_bounds()
         
         f_1 = max(f_1, 0)
         
-        worksheet1.write(0, 2, 'Lowest frequency')
+        worksheet1.write(0, 2, 'f_1')
         worksheet1.write(1, 2, f_1)
-        worksheet1.write(0, 3, 'Highest frequency')
+        worksheet1.write(0, 3, 'f_2')
         worksheet1.write(1, 3, f_2)
+        worksheet1.write(0, 4, 'f_3')
+        worksheet1.write(1, 4, f_1)
+        worksheet1.write(0, 5, 'f_4')
+        worksheet1.write(1, 5, f_2)
         
         for f in range(4):
             worksheet1.write(3, f*(l+2), types[f])
-            master.lib_dat.filter_lib(f,f_1,f_2)
+            master.lib_dat.filter_lib(f,f_1,f_2, f_3, f_4)
             for i in range(l+1):
                 for j in range(l+1):
                     if i == 0 and j == 0:
@@ -976,7 +970,7 @@ class execution(object):
                     execution_node.file(i)
                     a,b = self.modify(execution_node.dar, master)
                     execution_node.modify(a,b)
-                    execution_node.after_filter(master.setvalues[0], master.setvalues[1], master.setvalues[2])
+                    execution_node.after_filter(master.setvalues[0], master.setvalues[1], master.setvalues[2], master.setvalues[5], master.setvalues[6])
                     self.exname.append(name)
                     self.update_exdat(master, execution_node)
                 #except:
@@ -1016,7 +1010,7 @@ class execution(object):
             execution_node.file(f)
             a,b = self.modify(execution_node.dar, master)
             execution_node.modify(a,b)
-            execution_node.after_filter(master.setvalues[0], master.setvalues[1], master.setvalues[2])
+            execution_node.after_filter(master.setvalues[0], master.setvalues[1], master.setvalues[2], master.setvalues[5], master.setvalues[6])
             self.exname.append(name)
             self.update_exdat(master, execution_node)
         self.done()
@@ -1048,7 +1042,7 @@ class settings(object):
     def __init__(self,master):
         self.top=Toplevel(master) 
         self.top.title("Interferometry: Settings")
-        self.top.geometry('400x400')
+        self.top.geometry('600x600')
         
         self.frame1 = Frame(self.top)
         self.frame1.pack(side = "top")
@@ -1066,22 +1060,44 @@ class settings(object):
         
         self.frame2 = Frame(self.top)
         self.frame2.pack()
-        self.l2=Label(self.frame2,text="\n Frequency bounds:")
+        
+        self.frame2left = Frame(self.top)
+        self.frame2left.pack(side = "left")
+        self.l2=Label(self.frame2left,text="\n Frequency bounds high-pass:")
         self.l2.pack()
-        self.frame2top = Frame(self.frame2)
-        self.frame2top.pack(side = "top")
-        self.l3=Label(self.frame2top,text="Lowest:")
+        self.frame2lefttop = Frame(self.frame2left)
+        self.frame2lefttop.pack(side = "top")
+        self.l3=Label(self.frame2lefttop,text="Lowest:")
         self.l3.pack(side = "left")
-        self.e1=Entry(self.frame2top)
+        self.e1=Entry(self.frame2lefttop)
         self.e1.insert(END, master.setvalues[1])
         self.e1.pack(side = "right")
-        self.frame2bot = Frame(self.frame2)
-        self.frame2bot.pack(side = "bottom")
-        self.l4=Label(self.frame2bot,text="Highest:")
+        self.frame2leftbot = Frame(self.frame2left)
+        self.frame2leftbot.pack(side = "bottom")
+        self.l4=Label(self.frame2leftbot,text="Highest:")
         self.l4.pack(side = "left")
-        self.e2=Entry(self.frame2bot)
+        self.e2=Entry(self.frame2leftbot)
         self.e2.insert(END, master.setvalues[2])
         self.e2.pack(side = "right")
+        
+        self.frame2right = Frame(self.top)
+        self.frame2right.pack(side = "right")
+        self.l7=Label(self.frame2right,text="\n Frequency bounds low-pass:")
+        self.l7.pack()
+        self.frame2righttop = Frame(self.frame2right)
+        self.frame2righttop.pack(side = "top")
+        self.l8=Label(self.frame2righttop,text="Lowest:")
+        self.l8.pack(side = "left")
+        self.e5=Entry(self.frame2righttop)
+        self.e5.insert(END, master.setvalues[5])
+        self.e5.pack(side = "right")
+        self.frame2rightbot = Frame(self.frame2right)
+        self.frame2rightbot.pack(side = "bottom")
+        self.l9=Label(self.frame2rightbot,text="Highest:")
+        self.l9.pack(side = "left")
+        self.e6=Entry(self.frame2rightbot)
+        self.e6.insert(END, master.setvalues[6])
+        self.e6.pack(side = "right")
         
         self.frame3 = Frame(self.top)
         self.frame3.pack()
@@ -1099,9 +1115,100 @@ class settings(object):
         self.e4.insert(END, master.setvalues[4])
         self.e4.pack()
         
+        self.frame9 = Frame(self.top)
+        self.frame9.pack()
+        self.l9=Label(self.frame4,text="\n Get graphs from following files")
+        self.l9.pack()
+        self.b9=Button(self.top,text='Upload data files',command=lambda :self.uploaddata(master))
+        self.b9.pack()
         
         self.b=Button(self.top,text='Ok',command=lambda :self.cleanup(master))
         self.b.pack(side = "bottom")
+    
+    def modify(self,array, master):
+        self.mod_frame=mod_window(master, array)
+        master.wait_window(self.mod_frame.top)
+        return (self.mod_frame.begin, self.mod_frame.end)
+    
+    def uploaddata(self, master):
+        self.filenames =  filedialog.askopenfilenames(initialdir = "/",title = "Select file",filetypes = [("Audio files", "*.mp3 *.m4a *.wav"),("All Files", "*.*")])
+        if self.filenames:
+            for i in self.filenames:
+                try:
+                    name = str(simpledialog.askstring("Name for data node", "What data node:" + str(i)))
+                    node = data_node(name, 0.0)
+                    node.file(i)
+                    a,b = self.modify(node.dar, master)
+                    node.modify(a,b)
+                    
+                    FFT = np.fft.rfft(node.dar)
+                    
+                    plt.figure(figsize = (12,8))
+                    plt.plot(FFT)
+                    plt.xlabel("$f (Hz)$", fontsize = 15)
+                    plt.ylabel("$F(f) (magnitude)$", fontsize = 15)
+                    plt.grid()
+                    plt.savefig(os.path.join(master.newpath, name + "_FFT.png"))
+    
+    
+                    plt.figure(figsize = (12,8))
+                    plt.plot(np.arange(0.0, float(node.dar.size),1.0)/node.samp, node.dar)
+                    x = (float(node.dar.size)/node.samp)//0.1
+                    plt.xticks(np.arange(0.0, x*0.1 + 0.1, 0.1))
+                    plt.xlabel("$time (s)$", fontsize = 15)
+                    plt.ylabel("$Amplitude$", fontsize = 15)
+                    plt.grid()
+                    plt.savefig(os.path.join(master.newpath, name + "_Audio_node.png"))
+                    
+                    abs_FFT = np.absolute(FFT)
+                    plt.figure(figsize = (12,8))
+                    plt.plot(abs_FFT)
+                    plt.xlabel("$f (Hz)$", fontsize = 15)
+                    plt.ylabel("$|F(f)| (magnitude)$", fontsize = 15)
+                    plt.grid()
+                    plt.savefig(os.path.join(master.newpath, name + "_real_FFT.png"))
+                    
+                    val1 = float(self.e1.get())
+                    val2 = float(self.e2.get())
+                    val3 = float(self.e5.get())
+                    val4 = float(self.e6.get())
+                    
+                    if not val1 == val2 == val3 == val4 == 0.0:
+                        abs_FFT = np.absolute(FFT)
+                        plt.figure(figsize = (12,8))
+                        plt.plot(abs_FFT)
+                        plt.vlines([val1,val2,val3,val4],0,np.max(abs_FFT),colors = 'red',label=['f1','f2','f3','f4'])
+                        plt.xlabel("$f (Hz)$", fontsize = 15)
+                        plt.ylabel("$|F(f)| (magnitude)$", fontsize = 15)
+                        plt.xlim([0,8000])
+                        plt.grid()
+                        plt.savefig(os.path.join(master.newpath, name + "_real_FFT.png"))
+                        
+                        node.after_filter(2, val1, val2, val3, val4)    
+                        plt.figure(figsize = (12,8))
+                        plt.plot(np.arange(0.0, float(node.s.size),1.0)/node.samp, node.s)
+                        plt.xlabel("$time (s)$", fontsize = 15)
+                        plt.ylabel("$Amplitude$", fontsize = 15)
+                        plt.grid()
+                        plt.savefig(os.path.join(master.newpath, name + '_' + str(round(val3,1)) + '_' + str(round(val4,1)) + "_low_pass_Audio_node.png"))
+                        
+                        node.after_filter(3, val1, val2, val3, val4) 
+                        plt.figure(figsize = (12,8))
+                        plt.plot(np.arange(0.0, float(node.s.size),1.0)/node.samp, node.s)
+                        plt.xlabel("$time (s)$", fontsize = 15)
+                        plt.ylabel("$Amplitude$", fontsize = 15)
+                        plt.grid()
+                        plt.savefig(os.path.join(master.newpath, name + '_' + str(round(val1,1)) + '_' + str(round(val2,1)) + "_high_pass_Audio_node.png"))
+                        
+                        node.after_filter(4, val1, val2, val3, val4) 
+                        plt.figure(figsize = (12,8))
+                        plt.plot(np.arange(0.0, float(node.s.size),1.0)/node.samp, node.s)
+                        plt.xlabel("$time (s)$", fontsize = 15)
+                        plt.ylabel("$Amplitude$", fontsize = 15)
+                        plt.grid()
+                        plt.savefig(os.path.join(master.newpath, name + '_' + str(round(val1,1)) + '_' + str(round(val2,1)) + '_' + str(round(val3,1)) + '_' + str(round(val4,1)) + "_band_pass_Audio_node.png"))   
+                except:
+                    messagebox.showwarning(title = None, message = "Error: file not found or other I/O error. (DECODING FAILED)")        
     
     def cleanup(self,master):
         try:
@@ -1109,14 +1216,16 @@ class settings(object):
             val2 = float(self.e2.get())
             val3 = float(self.e3.get())
             val4 = float(self.e4.get())
-            if val1>val2:
+            val5 = float(self.e5.get())
+            val6 = float(self.e6.get())
+            if val1>val2 or val5>val6:
                 messagebox.showwarning(title=None, message="The minimum value is higher than the maximum value")
             elif val3>1 or val3<0:
                 messagebox.showwarning(title=None, message="'Approve execution values higher than' has a wrong value. Should be between 0 and 1")
             elif val4>1 or val4<0:
                 messagebox.showwarning(title=None, message="'Give warning at library for different nodes with values over' has a wrong value. Should be between 0 and 1")
             else:
-                master.setvalues = np.array([self.v0,val1,val2,val3,val4])
+                master.setvalues = np.array([self.v0,val1,val2,val3,val4,val5,val6])
                 self.top.destroy()
         except ValueError:
             messagebox.showwarning(title=None, message="One of the inserted values could not be converted to a float.")
@@ -1196,8 +1305,8 @@ class main_win(object):
         self.master.geometry('300x200')
         
         #standard settings
-        self.master.setvalues = np.array([1,0.0,0.0,0.7,0.7])
-        #filter, lowest f, highest f, minimum acceptance, minimum for error
+        self.master.setvalues = np.array([1,0.0,0.0,0.7,0.7,0.0,0.0])
+        #filter, lowest f high, highest f high, minimum acceptance, minimum for error, lowest f low, highest f low
         
         #initializes the library 
         self.master.lib_dat = library_data()
